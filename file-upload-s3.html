@@ -1,0 +1,169 @@
+<!--
+    AWS counter parties
+        API Gateway: s3uploader-v.2; You need to set CORS
+        Lambda function: s3uploader-UploadRequestFunction-v2
+            You need to add a role to access S3 wiith write (PutObject) - It is eccential
+                E.g., AmazonS3FullAccess
+        S3: s3uploader-s3uploadbucket-v.2
+            You need to set CORS.
+            Object ownership
+                "ACL enabled" with "Object writer" - I think it is not necessary.
+-->
+
+<!DOCTYPE html>
+
+<html>
+<head>
+    <style>
+        #filedropzone
+        {
+            /* display: none; */
+            font-weight: bold;
+            text-align: center;
+            padding: 1em 0;
+            margin: 1em 0;
+            color: #555;
+            border: 2px dashed #555;
+            border-radius: 7px;
+            cursor: default;
+        }
+
+        #filedropzone.hover
+        {
+            color: #f00;
+            border-color: #f00;
+            border-style: solid;
+            box-shadow: inset 0 3px 4px #888;
+        }
+    </style>
+
+    <script>
+        window.addEventListener('load', function() {
+            //if (window.File && window.FileList && window.FileReader) {  // if FILE API is supported
+                var filedropzone = document.getElementById("filedropzone");  // The div element as a drop zone
+                filedropzone.addEventListener("dragover", FileDragHover, false);
+                filedropzone.addEventListener("dragleave", FileDragHover, false);
+                filedropzone.addEventListener("drop", FileDrop, false);
+            //}
+        });
+
+        // File drag hover - for the dragover and dragleave events
+        function FileDragHover(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            e.target.className = (e.type == "dragover" ? "hover" : "");  // For CSS class
+        }
+
+        // File drop
+        function FileDrop(e) {
+            e.preventDefault();
+            // Cancel hover styling
+            FileDragHover(e);
+            // Assign the files to the file type input element so that they can be submitted.
+            document.getElementById("selected-file").files = e.dataTransfer.files;
+        }
+    </script>
+</head>
+
+<body>
+    <h1>Uploading a file to S3 using API Gateway and a Lambda function</h1>
+    <br>
+
+    <fieldset>
+        <label for="selected-file">Files to upload:</label>
+        <input type="file" id="selected-file" name="fileToUpload">
+        <br>
+
+        <div id="filedropzone">or drag a file and drop it here</div>
+
+        <button id='button-submit' type="button" disabled>Upload a file</button>
+    </fieldset>
+</body>
+</html>
+
+<script>
+    // It will be prepared by index.mjs with "GET /"
+    const API_GATEWAY_URL = 'https://pvco8ffgue.execute-api.us-west-1.amazonaws.com/'; // File-Upload-S3
+    document.getElementById("selected-file").addEventListener("change", function() {
+        document.getElementById("button-submit").disabled = false;
+    });
+
+    document.getElementById("button-submit").addEventListener("click", async function() {
+        /*
+        *   get the information of the file to upload
+        */
+
+        let files = document.getElementById("selected-file").files;
+        if (files == undefined) {
+            alert('No file selected');
+            return;
+        }
+        /*
+        for (let i = 0; i < files.length; i++) {
+            console.log(files[i].name);
+            console.log(files[i].type);
+            console.log(JSON.stringify(files[i]));
+        }
+        */
+        let file = files[0];
+        let file_name = file.name;
+        let file_type = file.type;
+
+        /*
+        *   get the URL to which we will upload the above file
+        */
+
+        let uploadURL = await getUploadURL(file_name, file_type);
+        alert(uploadURL);
+
+        /*
+        *   read the file into a Blob, and upload it
+        *      Reference: How to open files - https://www.sitepoint.com/html5-javascript-open-dropped-files/
+        */
+
+        let reader = new FileReader();
+        reader.readAsBinaryString(file);
+        reader.onload = async function(e) {
+            let content = e.target.result;
+            let length = e.target.result.length;
+            let array = new Uint8Array(length);
+            for (let i = 0; i < length; i++)
+                array[i] = content.charCodeAt(i);
+            let blobData = new Blob([new Uint8Array(array)], {type: file_type});
+
+            // uploading the above blockData
+            const result = await uploadFile(uploadURL, blobData);
+            alert('Result: ' + result.ok);
+        };
+    });
+
+    async function getUploadURL(file_name, file_type) {
+        const promise = new Promise(function(resolve, reject) {
+            const xhr = new XMLHttpRequest();
+            xhr.addEventListener("load", function() {
+                alert(this.responseText);
+                resolve(JSON.parse(this.responseText).uploadURL);
+            });
+            const url = API_GATEWAY_URL + `/uploads?name=${file_name}&type=${file_type}`;
+            //xhr.open("get", API_GATEWAY_URL);  // In this version, the file name is not submitted.
+            xhr.open("get", url);
+            xhr.send();
+        });
+
+        const uploadURL = await promise;
+
+        return uploadURL;
+    }
+
+    async function uploadFile(uploadURL, blobData) {
+        //      Reference: fetch() - https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#uploading_a_file
+        const result = await fetch(uploadURL, {  // fetch() Response object will be returned.
+            method: 'PUT',
+            body: blobData
+        })
+
+        //console.log('Result: ', result);
+
+        return result;
+    }
+</script>
