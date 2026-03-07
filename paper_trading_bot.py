@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import logging
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -63,6 +64,29 @@ FVG_SIZE = 0.25
 ENGULF_TIMEOUT = 10
 POSITION_SIZE = 500  # Dollars per trade (~1 share per trade)
 MAX_DAILY_TRADES = 5
+
+# Telegram Notifications (optional)
+# Create bot via @BotFather, get chat ID via @userinfobot
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+
+def send_telegram(message):
+    """Send notification to Telegram"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        requests.post(url, json=payload, timeout=10)
+        return True
+    except Exception as e:
+        logger.error(f"Telegram error: {e}")
+        return False
 
 # =============================================================================
 # ALPACA CLIENT SETUP
@@ -387,6 +411,8 @@ def run_bot():
     logger.info("FVG PAPER TRADING BOT STARTED")
     logger.info("=" * 60)
 
+    send_telegram("🤖 <b>FVG Trading Bot Started</b>\n\nWatching: " + ", ".join(SYMBOLS))
+
     # Initialize strategies for each symbol
     strategies = {symbol: FVGStrategy(symbol) for symbol in SYMBOLS}
     daily_trades = 0
@@ -457,9 +483,26 @@ def run_bot():
                                 daily_trades += 1
 
                                 logger.info(f"TRADE ENTERED: {signal}")
+                                send_telegram(
+                                    f"🔔 <b>TRADE OPENED</b>\n\n"
+                                    f"Symbol: <b>{symbol}</b>\n"
+                                    f"Side: {signal['action']}\n"
+                                    f"Entry: ${signal['entry']:.2f}\n"
+                                    f"Stop: ${signal['stop']:.2f}\n"
+                                    f"Target: ${signal['target']:.2f}\n"
+                                    f"Risk: ${signal['risk']:.2f}"
+                                )
 
                     elif signal['action'] == 'CLOSE':
                         close_position(symbol)
+                        result_emoji = "✅" if signal['reason'] == 'TARGET_HIT' else "❌"
+                        send_telegram(
+                            f"{result_emoji} <b>TRADE CLOSED</b>\n\n"
+                            f"Symbol: <b>{symbol}</b>\n"
+                            f"Reason: {signal['reason']}\n"
+                            f"Entry: ${strategy.entry_price:.2f}\n"
+                            f"Exit: {'Target' if signal['reason'] == 'TARGET_HIT' else 'Stop'}"
+                        )
                         strategy.position = None
                         strategy.reset()
                         logger.info(f"TRADE CLOSED: {symbol} - {signal['reason']}")
