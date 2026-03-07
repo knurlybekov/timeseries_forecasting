@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  trading-bot:
+    build: .
+    container_name: fvg-trading-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist logs outside container
+      - ./logs:/app/logs
+    environment:
+      - TZ=America/New_York
