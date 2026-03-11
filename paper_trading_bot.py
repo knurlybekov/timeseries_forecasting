@@ -10,7 +10,11 @@ import numpy as np
 from datetime import datetime, timedelta
 import logging
 import requests
+import pytz
 from dotenv import load_dotenv
+
+# Timezone for market hours
+ET = pytz.timezone('America/New_York')
 
 # Load environment variables from .env file
 load_dotenv()
@@ -101,7 +105,7 @@ data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
 
 def get_opening_range(symbol):
     """Get today's opening range (9:30-9:35 candle)"""
-    now = datetime.now()
+    now = datetime.now(ET)
     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
 
     request = StockBarsRequest(
@@ -126,7 +130,7 @@ def get_opening_range(symbol):
 
 def get_recent_candles(symbol, minutes=60):
     """Get recent 1-minute candles"""
-    now = datetime.now()
+    now = datetime.now(ET)
     start = now - timedelta(minutes=minutes)
 
     request = StockBarsRequest(
@@ -395,13 +399,13 @@ class FVGStrategy:
 # =============================================================================
 
 def is_market_open():
-    """Check if market is open (simplified)"""
-    now = datetime.now()
+    """Check if market is open (US Eastern Time)"""
+    now = datetime.now(ET)
     # Market hours: 9:30 AM - 4:00 PM ET, Monday-Friday
     if now.weekday() >= 5:  # Weekend
         return False
-    market_open = now.replace(hour=9, minute=30, second=0)
-    market_close = now.replace(hour=16, minute=0, second=0)
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
     return market_open <= now <= market_close
 
 
@@ -421,7 +425,7 @@ def run_bot():
 
     while True:
         try:
-            now = datetime.now()
+            now = datetime.now(ET)
             current_date = now.date()
 
             # Reset at start of new day
