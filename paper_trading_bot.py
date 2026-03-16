@@ -304,6 +304,8 @@ class FVGStrategy:
 
         # STATE 1: Waiting for breakout
         if self.state == 'waiting_for_breakout':
+            if self.or_high is None or self.or_low is None:
+                return None  # OR not set yet
             if candle['Close'] > self.or_high:
                 self.breakout_direction = 'long'
                 self.state = 'waiting_for_fvg'
@@ -422,6 +424,7 @@ def run_bot():
     daily_trades = 0
     last_date = None
     or_set = False
+    loop_count = 0
 
     while True:
         try:
@@ -443,30 +446,44 @@ def run_bot():
                 time.sleep(60)
                 continue
 
-            # Set opening range after 9:35
-            if not or_set and now.hour == 9 and now.minute >= 35:
+            # Set opening range after 9:35 (works even if bot starts later in the day)
+            if not or_set and (now.hour > 9 or (now.hour == 9 and now.minute >= 35)):
+                or_count = 0
                 for symbol, strategy in strategies.items():
                     or_data = get_opening_range(symbol)
                     if or_data:
                         strategy.set_opening_range(or_data['high'], or_data['low'])
+                        or_count += 1
+                    else:
+                        logger.warning(f"Failed to get opening range for {symbol}")
                 or_set = True
-                logger.info("Opening ranges set for all symbols")
+                logger.info(f"Opening ranges set for {or_count}/{len(SYMBOLS)} symbols")
 
             # Skip if OR not set yet
             if not or_set:
                 time.sleep(30)
                 continue
 
+            # Log status every 10 minutes
+            loop_count += 1
+            if loop_count % 10 == 0:
+                states = {s: strat.state for s, strat in strategies.items()}
+                logger.info(f"Status update - Trades today: {daily_trades}/{MAX_DAILY_TRADES}, States: {states}")
+
             # Process each symbol
             for symbol, strategy in strategies.items():
                 # Skip if max daily trades reached
                 if daily_trades >= MAX_DAILY_TRADES:
+                    logger.debug(f"Max daily trades ({MAX_DAILY_TRADES}) reached, skipping")
                     continue
 
                 # Get recent candles
                 candles = get_recent_candles(symbol, minutes=60)
                 if len(candles) < 5:
+                    logger.debug(f"{symbol}: Only {len(candles)} candles available, need at least 5")
                     continue
+
+                logger.debug(f"{symbol}: Processing {len(candles)} candles, state={strategy.state}")
 
                 # Process candle and get signal
                 signal = strategy.process_candle(candles)
